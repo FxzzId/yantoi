@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bayar QRIS</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family:Arial,sans-serif; }
+        body { background:#f5f7fa; display:flex; justify-content:center; align-items:center; min-height:100vh; }
+        .container { background:white; padding:30px; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.1); max-width:450px; width:100%; }
+        h1 { text-align:center; margin-bottom:20px; color:#1a1a2e; }
+        label { display:block; font-weight:600; margin:12px 0 4px; color:#333; }
+        input, button { width:100%; padding:12px; border-radius:8px; border:1px solid #ddd; font-size:16px; }
+        input:focus { outline:2px solid #6c5ce7; border-color:transparent; }
+        button { background:#6c5ce7; color:white; font-weight:bold; border:none; cursor:pointer; margin-top:16px; transition:0.2s; }
+        button:hover { background:#5a4bd1; }
+        .qris-box { margin-top:20px; padding:20px; background:#f8f9fa; border-radius:12px; text-align:center; display:none; }
+        .qris-box img { max-width:200px; margin:10px auto; display:block; }
+        .qris-box p { margin:6px 0; font-size:14px; color:#555; }
+        .btn-group { display:flex; gap:10px; margin-top:12px; }
+        .btn-group button { width:50%; margin-top:0; }
+        .btn-danger { background:#e74c3c; }
+        .btn-danger:hover { background:#c0392b; }
+        .btn-success { background:#27ae60; }
+        .btn-success:hover { background:#1e8449; }
+        .admin-link { text-align:center; margin-top:20px; }
+        .admin-link a { color:#6c5ce7; text-decoration:none; font-weight:600; }
+        .admin-link a:hover { text-decoration:underline; }
+        .status-msg { margin-top:12px; padding:10px; border-radius:8px; background:white; font-size:13px; text-align:left; word-break:break-all; border:1px solid #ddd; }
+        .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#333; color:white; padding:12px 24px; border-radius:8px; display:none; z-index:999; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💳 Bayar QRIS</h1>
+
+        <label>Jumlah (IDR)</label>
+        <input type="number" id="amount" value="50000" />
+
+        <label>Referensi Pesanan</label>
+        <input type="text" id="orderRef" placeholder="Order-123" />
+
+        <button id="generateBtn">🔲 Generate QRIS</button>
+
+        <div class="qris-box" id="qrisResult">
+            <h3 style="margin-bottom:10px;">QRIS Code</h3>
+            <img id="qrisImage" src="" alt="QRIS" />
+            <p><strong>ID:</strong> <span id="qrisId"></span></p>
+            <p><strong>Kadaluarsa:</strong> <span id="expiredAt"></span></p>
+            <div class="btn-group">
+                <button class="btn-success" id="statusBtn">🔍 Cek Status</button>
+                <button class="btn-danger" id="cancelBtn">❌ Batalkan</button>
+            </div>
+            <div id="statusResult" class="status-msg"></div>
+        </div>
+
+        <div class="admin-link">
+            <a href="/admin/nisa/imut">🔐 Admin Panel</a>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ========== KONFIGURASI ==========
+        const API_URL = 'https://api.qrispy.id';
+        const API_TOKEN = 'cki_WiQReCOCDBdovv6s59mtzguPRvlQYdgcE4A8hnbJx67REy3Y'; // GANTI PAKE TOKEN BARU!
+
+        // ========== ELEMEN ==========
+        const amountInput = document.getElementById('amount');
+        const orderRefInput = document.getElementById('orderRef');
+        const generateBtn = document.getElementById('generateBtn');
+        const qrisResult = document.getElementById('qrisResult');
+        const qrisImage = document.getElementById('qrisImage');
+        const qrisIdSpan = document.getElementById('qrisId');
+        const expiredAtSpan = document.getElementById('expiredAt');
+        const statusBtn = document.getElementById('statusBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const statusResult = document.getElementById('statusResult');
+        const toast = document.getElementById('toast');
+
+        let currentQrisId = null;
+        let toastTimer = null;
+
+        function showToast(msg, isError = false) {
+            toast.textContent = msg;
+            toast.style.background = isError ? '#e74c3c' : '#333';
+            toast.style.display = 'block';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 3000);
+        }
+
+        // ========== GENERATE QRIS ==========
+        async function generateQRIS() {
+            const amount = parseInt(amountInput.value);
+            const ref = orderRefInput.value.trim() || null;
+
+            if (!amount || amount < 1) {
+                showToast('Masukkan nominal yang valid!', true);
+                return;
+            }
+
+            const body = { amount };
+            if (ref) body.payment_reference = ref;
+
+            try {
+                const res = await fetch(API_URL + '/api/payment/qris/generate', {
+                    method: 'POST',
+                    headers: {
+                        'X-API-Token': API_TOKEN,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    currentQrisId = data.data.qris_id;
+                    qrisImage.src = data.data.qris_image_url;
+                    qrisIdSpan.textContent = data.data.qris_id;
+                    expiredAtSpan.textContent = data.data.expired_at;
+                    qrisResult.style.display = 'block';
+                    statusResult.innerHTML = '';
+                    showToast('✅ QRIS berhasil dibuat!');
+                } else {
+                    showToast('Gagal: ' + (data.message || JSON.stringify(data)), true);
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, true);
+            }
+        }
+
+        // ========== CEK STATUS ==========
+        async function checkStatus() {
+            if (!currentQrisId) {
+                showToast('Generate QRIS dulu!', true);
+                return;
+            }
+            try {
+                const res = await fetch(API_URL + '/api/payment/qris/' + currentQrisId + '/status', {
+                    headers: { 'X-API-Token': API_TOKEN }
+                });
+                const data = await res.json();
+                statusResult.innerHTML = '<strong>Status:</strong> ' + JSON.stringify(data, null, 2);
+            } catch (err) {
+                showToast('Error: ' + err.message, true);
+            }
+        }
+
+        // ========== BATALKAN QRIS ==========
+        async function cancelQRIS() {
+            if (!currentQrisId) {
+                showToast('Generate QRIS dulu!', true);
+                return;
+            }
+            if (!confirm('Yakin mau batalkan QRIS ini?')) return;
+
+            try {
+                const res = await fetch(API_URL + '/api/payment/qris/' + currentQrisId + '/cancel', {
+                    method: 'POST',
+                    headers: { 'X-API-Token': API_TOKEN }
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast('✅ QRIS berhasil dibatalkan!');
+                    statusResult.innerHTML = '<strong>Status:</strong> ' + JSON.stringify(data);
+                } else {
+                    showToast('Gagal: ' + (data.message || JSON.stringify(data)), true);
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, true);
+            }
+        }
+
+        // ========== EVENT LISTENER ==========
+        generateBtn.addEventListener('click', generateQRIS);
+        statusBtn.addEventListener('click', checkStatus);
+        cancelBtn.addEventListener('click', cancelQRIS);
+
+        // Enter key buat generate
+        amountInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') generateQRIS(); });
+        orderRefInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') generateQRIS(); });
+    </script>
+</body>
+  </html>
