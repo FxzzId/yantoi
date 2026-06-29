@@ -10,7 +10,6 @@
     { "source": "/deposit/(.*)", "destination": "/public/deposit.html" },
     { "source": "/unauthorized", "destination": "/public/unauthorized.html" },
     { "source": "/ketentuan", "destination": "/public/ketentuan.html" },
-    { "source": "/gacha", "destination": "/public/index.html" },
     { "source": "/api/webhook", "destination": "/api/webhook.js" },
     { "source": "/api/(.*)", "destination": "/api/webhook.js" },
     { "source": "/(.*)", "destination": "/public/index.html" }
