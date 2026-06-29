@@ -1,19 +1,59 @@
 {
   "version": 2,
-  "public": true,
-  "outputDirectory": "public",
-  "rewrites": [
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/(.*)", "destination": "/admin.html" },
-    { "source": "/profile", "destination": "/profile.html" },
-    { "source": "/profile/(.*)", "destination": "/profile.html" },
-    { "source": "/order/(.*)", "destination": "/order.html" },
-    { "source": "/deposit", "destination": "/deposit.html" },
-    { "source": "/deposit/(.*)", "destination": "/deposit.html" },
-    { "source": "/unauthorized", "destination": "/unauthorized.html" },
-    { "source": "/ketentuan", "destination": "/ketentuan.html" },
-    { "source": "/api/webhook", "destination": "/api/webhook.js" },
-    { "source": "/api/(.*)", "destination": "/api/webhook.js" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/admin",
+      "dest": "/public/admin.html"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "/public/admin.html"
+    },
+    {
+      "src": "/profile",
+      "dest": "/public/profile.html"
+    },
+    {
+      "src": "/profile/(.*)",
+      "dest": "/public/profile.html"
+    },
+    {
+      "src": "/order/(.*)",
+      "dest": "/public/order.html"
+    },
+    {
+      "src": "/deposit",
+      "dest": "/public/deposit.html"
+    },
+    {
+      "src": "/deposit/(.*)",
+      "dest": "/public/deposit.html"
+    },
+    {
+      "src": "/unauthorized",
+      "dest": "/public/unauthorized.html"
+    },
+    {
+      "src": "/ketentuan",
+      "dest": "/public/ketentuan.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
   ]
 }
