@@ -1,0 +1,8 @@
+{
+  "name": "yanto-store",
+  "version": "1.0.0",
+  "description": "Yanto Store - AutoOrder Digital with Qrispy Webhook",
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  }
+}
