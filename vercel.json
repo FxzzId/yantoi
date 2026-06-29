@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/admin", "destination": "/public/admin.html" },
+    { "source": "/admin/(.*)", "destination": "/public/admin.html" },
+    { "source": "/profile", "destination": "/public/profile.html" },
+    { "source": "/profile/(.*)", "destination": "/public/profile.html" },
+    { "source": "/order/(.*)", "destination": "/public/order.html" },
+    { "source": "/deposit", "destination": "/public/deposit.html" },
+    { "source": "/deposit/(.*)", "destination": "/public/deposit.html" },
+    { "source": "/unauthorized", "destination": "/public/unauthorized.html" },
+    { "source": "/ketentuan", "destination": "/public/ketentuan.html" },
+    { "source": "/gacha", "destination": "/public/index.html" },
+    { "source": "/api/webhook", "destination": "/api/webhook.js" },
+    { "source": "/api/(.*)", "destination": "/api/webhook.js" },
+    { "source": "/(.*)", "destination": "/public/index.html" }
+  ]
+}
