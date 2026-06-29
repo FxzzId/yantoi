@@ -1,15 +1,15 @@
+const { get, set } = require('@vercel/edge-config');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
-const DATA_FILE = path.join(__dirname, '../data.json');
 const QRISPY_WEBHOOK_SECRET = process.env.QRISPY_WEBHOOK_SECRET || 'whsec_AVu3fFLUBVMLjo6OdCWq7I3qdQ2CJ6e2';
 const QRISPY_TOKEN = process.env.QRISPY_TOKEN || 'cki_IBpAYezwDHbfrMuENZMFvFw5mI94M11dAT146N0Ar4HrOWKi';
 const QRISPY_API_URL = process.env.QRISPY_API_URL || 'https://api.qrispy.id';
 
-function readData() {
+// ========== DATA HELPER (Edge Config) ==========
+async function readData() {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
+    const data = await get('data');
+    if (!data) {
       const defaultData = {
         products: [
           { id: 1, name: 'Contoh Produk', description: 'Ini produk contoh', price: 10000, stock: 10, itemType: 'text', itemContent: 'Kode produk contoh', bonusType: 'none', bonusContent: '', createdAt: new Date().toISOString() }
@@ -22,18 +22,22 @@ function readData() {
         maintenance: false,
         webhookLogs: []
       };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(defaultData, null, 2));
+      await set('data', defaultData);
       return defaultData;
     }
-    const raw = fs.readFileSync(DATA_FILE);
-    return JSON.parse(raw);
+    return data;
   } catch (e) {
+    console.error('Error readData:', e);
     return { products: [], orders: [], users: [], deposits: [], withdrawals: [], referralClicks: {}, maintenance: false, webhookLogs: [] };
   }
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+async function writeData(data) {
+  try {
+    await set('data', data);
+  } catch (e) {
+    console.error('Error writeData:', e);
+  }
 }
 
 function generateOrderCode() {
@@ -62,6 +66,7 @@ async function fetchQrispy(endpoint, options = {}) {
   return res.json();
 }
 
+// ========== MAIN HANDLER ==========
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -91,13 +96,13 @@ module.exports = async (req, res) => {
       const { event, data } = req.body;
       if (event === 'payment.received') {
         const { qris_id, amount, received_amount, paid_at } = data;
-        const db = readData();
+        const db = await readData();
         let order = db.orders.find(o => o.qrisId === qris_id);
         if (order) {
           order.status = 'paid';
           order.paidAt = paid_at || new Date().toISOString();
           order.receivedAmount = received_amount || amount;
-          writeData(db);
+          await writeData(db);
         } else {
           let deposit = db.deposits.find(d => d.qrisId === qris_id);
           if (deposit) {
@@ -105,12 +110,12 @@ module.exports = async (req, res) => {
             deposit.paidAt = paid_at || new Date().toISOString();
             const user = db.users.find(u => u.name === deposit.userName);
             if (user) user.discountBalance = (user.discountBalance || 0) + (deposit.amount || amount);
-            writeData(db);
+            await writeData(db);
           }
         }
         db.webhookLogs = db.webhookLogs || [];
         db.webhookLogs.push({ event, qris_id, amount, received_amount, paid_at, processedAt: new Date().toISOString() });
-        writeData(db);
+        await writeData(db);
         return res.json({ success: true });
       }
       return res.json({ success: true, message: 'Event: ' + event });
@@ -121,7 +126,7 @@ module.exports = async (req, res) => {
 
   // ========== PUBLIC STATS ==========
   if (url === '/api/public-stats' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     const orders = data.orders || [];
     const soldMap = {};
     orders.filter(o => o.status === 'paid').forEach(o => {
@@ -132,14 +137,14 @@ module.exports = async (req, res) => {
 
   // ========== PRODUCTS ==========
   if (url === '/api/products' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     return res.json({ success: true, products: data.products || [] });
   }
 
   // ========== CREATE ORDER ==========
   if (url === '/api/create-order' && method === 'POST') {
     const { productId, customerName, qrisId, qrisImage, totalAmount, expiredAt } = body;
-    const data = readData();
+    const data = await readData();
     const product = data.products.find(p => p.id === productId);
     if (!product) return res.json({ success: false, error: 'Produk tidak ditemukan' });
     if (product.stock <= 0) return res.json({ success: false, error: 'Stok habis' });
@@ -163,14 +168,14 @@ module.exports = async (req, res) => {
     };
     product.stock -= 1;
     data.orders.push(order);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, orderCode });
   }
 
   // ========== CREATE CART ORDER ==========
   if (url === '/api/create-cart-order' && method === 'POST') {
     const { items, customerName, qrisId, qrisImage, totalAmount, expiredAt } = body;
-    const data = readData();
+    const data = await readData();
     let productNames = [];
     let allStock = true;
     for (const item of items) {
@@ -203,14 +208,14 @@ module.exports = async (req, res) => {
       cartItems: items
     };
     data.orders.push(order);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, orderCode });
   }
 
   // ========== GET ORDER ==========
   if (url.startsWith('/api/get-order/') && method === 'GET') {
     const orderCode = url.split('/').pop();
-    const data = readData();
+    const data = await readData();
     const order = data.orders.find(o => o.orderCode === orderCode);
     if (!order) return res.json({ success: false, error: 'Order tidak ditemukan' });
     return res.json({ success: true, ...order, productName: order.productName, productCode: order.productCode, itemType: order.itemType, bonusContent: order.bonusContent || '', totalAmount: order.totalAmount || order.price, status: order.status });
@@ -219,20 +224,20 @@ module.exports = async (req, res) => {
   // ========== CHECK PAYMENT ==========
   if (url.startsWith('/api/check-payment/') && method === 'GET') {
     const orderCode = url.split('/').pop();
-    const data = readData();
+    const data = await readData();
     const order = data.orders.find(o => o.orderCode === orderCode);
     if (!order) return res.json({ success: false, error: 'Order tidak ditemukan' });
     try {
       const qrisRes = await fetchQrispy('/api/payment/qris/' + order.qrisId + '/status');
       if (qrisRes.status === 'success' && qrisRes.data && qrisRes.data.status === 'paid') {
         order.status = 'paid';
-        writeData(data);
+        await writeData(data);
         return res.json({ status: 'paid' });
       }
     } catch (e) {}
     if (new Date(order.expiredAt) < new Date()) {
       order.status = 'expired';
-      writeData(data);
+      await writeData(data);
       return res.json({ status: 'expired' });
     }
     return res.json({ status: order.status || 'pending' });
@@ -241,21 +246,21 @@ module.exports = async (req, res) => {
   // ========== CANCEL ORDER ==========
   if (url.startsWith('/api/cancel-order/') && method === 'POST') {
     const orderCode = url.split('/').pop();
-    const data = readData();
+    const data = await readData();
     const order = data.orders.find(o => o.orderCode === orderCode);
     if (!order) return res.json({ success: false, error: 'Order tidak ditemukan' });
     if (order.status !== 'pending') return res.json({ success: false, error: 'Order sudah tidak bisa dibatalkan' });
     order.status = 'cancelled';
     const product = data.products.find(p => p.id === order.productId);
     if (product) product.stock += 1;
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== REGISTER ==========
   if (url === '/api/register' && method === 'POST') {
     const { name, birthDate, password } = body;
-    const data = readData();
+    const data = await readData();
     if (data.users.find(u => u.name.toLowerCase() === name.toLowerCase())) {
       return res.json({ success: false, error: 'Nama sudah digunakan' });
     }
@@ -274,14 +279,14 @@ module.exports = async (req, res) => {
       createdAt: new Date().toISOString()
     };
     data.users.push(user);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== LOGIN ==========
   if (url === '/api/login' && method === 'POST') {
     const { name, password } = body;
-    const data = readData();
+    const data = await readData();
     const user = data.users.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === password);
     if (!user) return res.json({ success: false, error: 'Nama atau password salah' });
     return res.json({
@@ -305,7 +310,7 @@ module.exports = async (req, res) => {
   // ========== USER PROFILE ==========
   if (url === '/api/user/profile' && method === 'GET') {
     const name = query.name;
-    const data = readData();
+    const data = await readData();
     const user = data.users.find(u => u.name === name);
     if (!user) return res.json({ success: false });
     return res.json({
@@ -324,7 +329,7 @@ module.exports = async (req, res) => {
   // ========== USER ORDERS ==========
   if (url === '/api/user/orders' && method === 'GET') {
     const name = query.name;
-    const data = readData();
+    const data = await readData();
     const orders = data.orders.filter(o => o.customerName === name);
     return res.json({ success: true, orders });
   }
@@ -332,7 +337,7 @@ module.exports = async (req, res) => {
   // ========== USER DEPOSITS ==========
   if (url === '/api/user/deposits' && method === 'GET') {
     const name = query.name;
-    const data = readData();
+    const data = await readData();
     const deposits = data.deposits.filter(d => d.userName === name);
     return res.json({ success: true, deposits });
   }
@@ -340,7 +345,7 @@ module.exports = async (req, res) => {
   // ========== USER DEPOSIT DETAIL ==========
   if (url.startsWith('/api/user/deposit/') && method === 'GET') {
     const id = url.split('/').pop();
-    const data = readData();
+    const data = await readData();
     const deposit = data.deposits.find(d => String(d.id) === id);
     if (!deposit) return res.json({ success: false });
     return res.json({ success: true, deposit });
@@ -349,7 +354,7 @@ module.exports = async (req, res) => {
   // ========== SAVE DEPOSIT ==========
   if (url === '/api/user/deposit-save' && method === 'POST') {
     const { amount, qrisId, qrisImage, expiredAt, userName } = body;
-    const data = readData();
+    const data = await readData();
     const deposit = {
       id: Date.now(),
       userName: userName || 'Guest',
@@ -361,26 +366,26 @@ module.exports = async (req, res) => {
       expiredAt: expiredAt || new Date(Date.now() + 15 * 60 * 1000).toISOString()
     };
     data.deposits.push(deposit);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, depId: deposit.id });
   }
 
   // ========== CANCEL DEPOSIT ==========
   if (url.startsWith('/api/user/cancel-deposit/') && method === 'POST') {
     const id = url.split('/').pop();
-    const data = readData();
+    const data = await readData();
     const deposit = data.deposits.find(d => String(d.id) === id);
     if (!deposit) return res.json({ success: false, error: 'Deposit tidak ditemukan' });
     if (deposit.status !== 'pending') return res.json({ success: false, error: 'Deposit sudah tidak bisa dibatalkan' });
     deposit.status = 'cancelled';
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== USER WITHDRAWALS ==========
   if (url === '/api/user/withdrawals' && method === 'GET') {
     const name = query.name;
-    const data = readData();
+    const data = await readData();
     const withdrawals = data.withdrawals.filter(w => w.userName === name);
     return res.json({ success: true, withdrawals });
   }
@@ -388,7 +393,7 @@ module.exports = async (req, res) => {
   // ========== WITHDRAW ==========
   if (url === '/api/user/withdraw' && method === 'POST') {
     const { amount, paymentMethod, paymentNumber, userName } = body;
-    const data = readData();
+    const data = await readData();
     const user = data.users.find(u => u.name === userName);
     if (!user) return res.json({ success: false, error: 'User tidak ditemukan' });
     if ((user.discountBalance || 0) < amount) return res.json({ success: false, error: 'Saldo tidak cukup' });
@@ -402,25 +407,25 @@ module.exports = async (req, res) => {
       status: 'pending',
       createdAt: new Date().toISOString()
     });
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== CHANGE PASSWORD ==========
   if (url === '/api/user/change-password' && method === 'POST') {
     const { oldPassword, newPassword, userName } = body;
-    const data = readData();
+    const data = await readData();
     const user = data.users.find(u => u.name === userName);
     if (!user) return res.json({ success: false, error: 'User tidak ditemukan' });
     if (user.password !== oldPassword) return res.json({ success: false, error: 'Password lama salah' });
     user.password = newPassword;
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== ADMIN: STATS ==========
   if (url === '/api/admin/stats' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     const orders = data.orders || [];
     const totalRevenue = orders.filter(o => o.status === 'paid').reduce((sum, o) => sum + (o.totalAmount || o.price || 0), 0);
     return res.json({
@@ -439,20 +444,20 @@ module.exports = async (req, res) => {
 
   // ========== ADMIN: ORDERS ==========
   if (url === '/api/admin/orders' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     return res.json({ success: true, orders: data.orders || [] });
   }
 
   // ========== ADMIN: PRODUCTS ==========
   if (url === '/api/admin/products' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     return res.json({ success: true, products: data.products || [] });
   }
 
   // ========== ADMIN: GET SINGLE PRODUCT ==========
   if (url.startsWith('/api/admin/product/') && method === 'GET') {
     const id = parseInt(url.split('/').pop());
-    const data = readData();
+    const data = await readData();
     const product = data.products.find(p => p.id === id);
     if (!product) return res.json({ success: false });
     return res.json({ success: true, product });
@@ -461,7 +466,7 @@ module.exports = async (req, res) => {
   // ========== ADMIN: ADD PRODUCT ==========
   if (url === '/api/admin/product' && method === 'POST') {
     const { name, description, price, stock, itemType, itemContent, bonusType, bonusContent } = body;
-    const data = readData();
+    const data = await readData();
     const product = {
       id: Date.now(),
       name,
@@ -475,7 +480,7 @@ module.exports = async (req, res) => {
       createdAt: new Date().toISOString()
     };
     data.products.push(product);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
@@ -483,7 +488,7 @@ module.exports = async (req, res) => {
   if (url.startsWith('/api/admin/product/') && method === 'PUT') {
     const id = parseInt(url.split('/').pop());
     const { name, description, price, stock, itemType, itemContent, bonusType, bonusContent } = body;
-    const data = readData();
+    const data = await readData();
     const product = data.products.find(p => p.id === id);
     if (!product) return res.json({ success: false, error: 'Produk tidak ditemukan' });
     product.name = name || product.name;
@@ -494,31 +499,31 @@ module.exports = async (req, res) => {
     product.itemContent = itemContent || product.itemContent;
     product.bonusType = bonusType || product.bonusType;
     product.bonusContent = bonusContent || product.bonusContent;
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== ADMIN: DELETE PRODUCT ==========
   if (url.startsWith('/api/admin/product/') && method === 'DELETE') {
     const id = parseInt(url.split('/').pop());
-    const data = readData();
+    const data = await readData();
     data.products = data.products.filter(p => p.id !== id);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== ADMIN: DELETE ORDER ==========
   if (url.startsWith('/api/admin/order/') && method === 'DELETE') {
     const id = parseInt(url.split('/').pop());
-    const data = readData();
+    const data = await readData();
     data.orders = data.orders.filter(o => o.id !== id);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== ADMIN: WITHDRAWALS ==========
   if (url === '/api/admin/withdrawals' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     return res.json({ success: true, withdrawals: data.withdrawals || [] });
   }
 
@@ -526,16 +531,16 @@ module.exports = async (req, res) => {
   if (url.startsWith('/api/admin/withdrawal/') && method === 'PUT') {
     const id = parseInt(url.split('/').pop());
     const { status } = body;
-    const data = readData();
+    const data = await readData();
     const wd = data.withdrawals.find(w => w.id === id);
-    if (wd) { wd.status = status; writeData(data); }
+    if (wd) { wd.status = status; await writeData(data); }
     return res.json({ success: true });
   }
 
   // ========== ADMIN: SAVE QRIS ORDER ==========
   if (url === '/api/admin/save-qris-order' && method === 'POST') {
     const { qrisId, qrisImage, totalAmount, expiredAt, customerName } = body;
-    const data = readData();
+    const data = await readData();
     const orderCode = generateOrderCode();
     data.orders.push({
       id: Date.now(),
@@ -554,31 +559,32 @@ module.exports = async (req, res) => {
       expiredAt: expiredAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       productId: null
     });
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, orderCode });
   }
 
   // ========== ADMIN: TOGGLE MAINTENANCE ==========
   if (url === '/api/admin/toggle-maintenance' && method === 'POST') {
     const { maintenance } = body;
-    const data = readData();
+    const data = await readData();
     data.maintenance = maintenance;
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true });
   }
 
   // ========== ADMIN: RESET ORDERS ==========
   if (url === '/api/admin/reset-orders' && method === 'POST') {
-    const data = readData();
+    const data = await readData();
     const before = data.orders.length;
     data.orders = data.orders.filter(o => o.status === 'paid');
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, deletedCount: before - data.orders.length });
   }
 
   // ========== ADMIN: BACKUP ==========
   if (url === '/api/admin/backup' && method === 'POST') {
-    return res.json({ success: true, message: 'Backup berhasil' });
+    const data = await readData();
+    return res.json({ success: true, message: 'Backup berhasil', data });
   }
 
   // ========== ADMIN: BROADCAST ==========
@@ -588,7 +594,7 @@ module.exports = async (req, res) => {
 
   // ========== ADMIN: PENDING REFERRALS ==========
   if (url === '/api/admin/pending-referrals' && method === 'GET') {
-    const data = readData();
+    const data = await readData();
     const pending = data.orders.filter(o => o.status === 'pending' && o.referrerCode);
     return res.json({ success: true, pending });
   }
@@ -596,13 +602,13 @@ module.exports = async (req, res) => {
   // ========== ADMIN: APPROVE REFERRAL ==========
   if (url === '/api/admin/approve-referral' && method === 'POST') {
     const { orderCode } = body;
-    const data = readData();
+    const data = await readData();
     const order = data.orders.find(o => o.orderCode === orderCode);
     if (order) {
       order.referralStatus = 'approved';
       const referrer = data.users.find(u => u.referralCode === order.referrerCode);
       if (referrer) referrer.referralCount = (referrer.referralCount || 0) + 1;
-      writeData(data);
+      await writeData(data);
     }
     return res.json({ success: true });
   }
@@ -610,11 +616,11 @@ module.exports = async (req, res) => {
   // ========== ADMIN: REJECT REFERRAL ==========
   if (url === '/api/admin/reject-referral' && method === 'POST') {
     const { orderCode } = body;
-    const data = readData();
+    const data = await readData();
     const order = data.orders.find(o => o.orderCode === orderCode);
     if (order) {
       order.referralStatus = 'rejected';
-      writeData(data);
+      await writeData(data);
     }
     return res.json({ success: true });
   }
@@ -622,11 +628,11 @@ module.exports = async (req, res) => {
   // ========== ADMIN: ADD BALANCE ==========
   if (url === '/api/admin/add-balance' && method === 'POST') {
     const { referralCode, amount } = body;
-    const data = readData();
+    const data = await readData();
     const user = data.users.find(u => u.referralCode === referralCode);
     if (!user) return res.json({ success: false, error: 'User tidak ditemukan' });
     user.discountBalance = (user.discountBalance || 0) + (parseInt(amount) || 500);
-    writeData(data);
+    await writeData(data);
     return res.json({ success: true, message: 'Saldo ditambahkan' });
   }
 
@@ -640,9 +646,11 @@ module.exports = async (req, res) => {
     return res.json({ status: 'ok', timestamp: new Date().toISOString() });
   }
 
+  // ========== 404 ==========
   return res.status(404).json({ error: 'Endpoint tidak ditemukan' });
 
   } catch (error) {
+    console.error('Error:', error);
     return res.status(500).json({ error: error.message });
   }
 };
