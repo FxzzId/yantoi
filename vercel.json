@@ -1,17 +1,19 @@
 {
   "version": 2,
+  "public": true,
+  "outputDirectory": "public",
   "rewrites": [
-    { "source": "/admin", "destination": "/public/admin.html" },
-    { "source": "/admin/(.*)", "destination": "/public/admin.html" },
-    { "source": "/profile", "destination": "/public/profile.html" },
-    { "source": "/profile/(.*)", "destination": "/public/profile.html" },
-    { "source": "/order/(.*)", "destination": "/public/order.html" },
-    { "source": "/deposit", "destination": "/public/deposit.html" },
-    { "source": "/deposit/(.*)", "destination": "/public/deposit.html" },
-    { "source": "/unauthorized", "destination": "/public/unauthorized.html" },
-    { "source": "/ketentuan", "destination": "/public/ketentuan.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/(.*)", "destination": "/admin.html" },
+    { "source": "/profile", "destination": "/profile.html" },
+    { "source": "/profile/(.*)", "destination": "/profile.html" },
+    { "source": "/order/(.*)", "destination": "/order.html" },
+    { "source": "/deposit", "destination": "/deposit.html" },
+    { "source": "/deposit/(.*)", "destination": "/deposit.html" },
+    { "source": "/unauthorized", "destination": "/unauthorized.html" },
+    { "source": "/ketentuan", "destination": "/ketentuan.html" },
     { "source": "/api/webhook", "destination": "/api/webhook.js" },
     { "source": "/api/(.*)", "destination": "/api/webhook.js" },
-    { "source": "/(.*)", "destination": "/public/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
